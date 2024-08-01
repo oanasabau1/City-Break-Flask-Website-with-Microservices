@@ -1,0 +1,9 @@
+injector
+Flask
+Flask-SQLAlchemy
+SQLAlchemy
+mysqlclient
+flask-injector
+python-consul
+python-decouple
+python-logstash

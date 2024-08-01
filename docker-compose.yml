@@ -1,0 +1,258 @@
+version: '3.9'
+
+services:
+#  microskel:  # build-only service
+#    build:
+#      context: microskel
+#    image: microskel
+
+  consul-server:  # centralizeaza catalogul de servicii + leader election
+    image: progrium/consul
+    expose:
+      - 8300
+      - 8301
+      - 8301/udp
+      - 8302
+      - 8302/udp
+      - 8400
+    ports:
+      - "8500:8500"  # PAT
+    networks:
+      siemens:
+        ipv4_address: 10.10.10.2
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 150M
+#    memswap_limit: 75M
+    command: "-server -bootstrap -ui-dir /ui -advertise 10.10.10.2"
+
+  consul-agent:  # cu el discuta aplicatia mea + verifica health
+    image: progrium/consul
+    depends_on:
+      - consul-server
+    expose:
+      - 8300
+      - 8301
+      - 8301/udp
+      - 8302
+      - 8302/udp
+      - 8400
+      - 8500
+    networks:
+      siemens:
+        ipv4_address: 10.10.10.3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 500M
+    command: "-advertise 10.10.10.3 -join 10.10.10.2"
+
+  elasticsearch:  # indexeaza logurile (primite de la logstash) in vederea cautarii
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.15.2
+    expose:
+      - 9200
+      - 9300
+    environment:
+      - discovery.type=single-node
+    networks:
+      siemens:
+        ipv4_address: 10.10.10.4
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+    volumes:
+      - elastic_search_db:/usr/share/elasticsearch/data
+
+  kibana:  # master pt cautari loguri + indexari
+    image: docker.elastic.co/kibana/kibana:7.15.2
+    depends_on:
+      - elasticsearch
+    ports:
+      - "5601:5601"
+    networks:
+      siemens:
+        ipv4_address: 10.10.10.5
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 700M
+
+  logstash-agent:  # broker intre aplicatie si elasticsearch
+    image: docker.elastic.co/logstash/logstash:7.15.2
+    expose:
+      - 51515
+    depends_on:
+      - kibana
+    networks:
+      siemens:
+        ipv4_address: 10.10.10.6
+    command: "-e \"input { tcp { port => 51515 codec => json } }  output { elasticsearch { hosts => 'http://10.10.10.4:9200' } } \""
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 600M
+
+  service-event-db:
+    image: mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=abc123
+      - MYSQL_USER=events
+      - MYSQL_PASSWORD=abc123
+      - MYSQL_DATABASE=events
+    healthcheck:
+      test: [ "CMD-SHELL", "mysql -uroot -p$$MYSQL_ROOT_PASSWORD -e 'SELECT 1'" ]
+      interval: 20s
+      retries: 5
+      timeout: 5s
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 500M
+    expose:
+      - 3306
+    networks:
+      siemens:
+        ipv4_address: 10.10.10.7
+    volumes:
+      - service_event_db:/var/lib/mysql
+
+  events_service:
+    build: events
+    depends_on:
+      consul-agent:
+        condition: service_started
+      logstash-agent:
+        condition: service_started
+      service-event-db:
+        condition: service_healthy
+    environment:
+      - MICROSERVICE_NAME=events_service
+      - MICROSERVICE_HOST=events_service
+      - MICROSERVICE_PORT=5000
+      - MICROSERVICE_DEBUG=True
+      - CONSUL_CHECK_INTERVAL=20s
+      - CONSUL_CHECK_TIMEOUT=10s
+      - CONSUL_HOST=consul-agent
+      - CONSUL_PORT=8500
+      - LOGSTASH_AGENT_HOST=logstash-agent
+      - LOGSTASH_AGENT_PORT=51515
+      - LOGSTASH_ENABLED=True
+      - USE_DB=True
+      - MICROSERVICE_DB_URI=mysql://events:abc123@service-event-db:3306/events
+    networks:
+      siemens:
+        ipv4_address: 10.10.10.14
+    ports:
+      - "8080:5000"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 100M
+
+  weather_service:
+    build: weather
+    depends_on:
+      consul-agent:
+        condition: service_started
+      logstash-agent:
+        condition: service_started
+      redis-weather:
+        condition: service_started
+    environment:
+      - REDIS_HOST=redis-weather
+      - MICROSERVICE_NAME=weather_service
+      - MICROSERVICE_HOST=weather_service
+      - MICROSERVICE_PORT=5000
+      - MICROSERVICE_DEBUG=True
+      - CONSUL_CHECK_INTERVAL=20s
+      - CONSUL_CHECK_TIMEOUT=10s
+      - CONSUL_HOST=consul-agent
+      - CONSUL_PORT=8500
+      - LOGSTASH_AGENT_HOST=logstash-agent
+      - LOGSTASH_AGENT_PORT=51515
+      - LOGSTASH_ENABLED=True
+      - USE_DB=False
+    networks:
+      siemens:
+        ipv4_address: 10.10.10.15
+    ports:
+      - "8084:5000"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 100M
+
+  gateway_service:
+    build: gateway
+    depends_on:
+      consul-agent:
+        condition: service_started
+      logstash-agent:
+        condition: service_started
+    environment:
+      - EVENTS_SERVICE_URL=http://event_service:5000/events
+      - WEATHER_SERVICE_URL=http://weather_service:5000/weather
+      - MICROSERVICE_NAME=gateway_service
+      - MICROSERVICE_HOST=gateway_service
+      - MICROSERVICE_PORT=5000
+      - MICROSERVICE_DEBUG=True
+      - CONSUL_CHECK_INTERVAL=20s
+      - CONSUL_CHECK_TIMEOUT=10s
+      - CONSUL_HOST=consul-agent
+      - CONSUL_PORT=8500
+      - LOGSTASH_AGENT_HOST=logstash-agent
+      - LOGSTASH_AGENT_PORT=51515
+      - LOGSTASH_ENABLED=True
+      - USE_DB=False
+      - MICROSERVICE_DB_URI=mysql://events:abc123@service-event-db:3306/events
+    networks:
+      siemens:
+        ipv4_address: 10.10.10.16
+    ports:
+      - "8088:5000"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 100M
+
+  redis-weather:
+    image: redis
+    healthcheck:
+      test: [ "CMD", "redis=cli", "--raw", "incr", "ping" ]
+      interval: 20s
+      retries: 5
+      timeout: 5s
+      start_period: 30s
+    volumes:
+      - service_weather_db:/data
+    networks:
+      siemens:
+        ipv4_address: 10.10.10.23
+
+networks:
+  siemens:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.10.0/24
+          gateway: 10.10.10.1
+
+volumes:
+  service_event_db:
+    name: event_app
+  elastic_search_db:
+    name: elastic_app
+  service_weather_db:
+    name: weather_app
