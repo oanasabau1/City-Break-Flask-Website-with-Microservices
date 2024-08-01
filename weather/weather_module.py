@@ -17,10 +17,15 @@ def configure_views(app):
         weather = client.get(key)
         print(f'key={key}')
         if not weather:
-            return 'No data', 401
+            return 'No data found for the specified key', 404
+
+        try:
+            weather = weather.decode('utf-8')
+            weather = json.loads(weather)
+        except json.JSONDecodeError:
+            return 'Data format error', 500
+
         print(f'weather = {weather}')
-        weather = client.get(key)
-        weather = json.loads(weather)
         return json.dumps(weather), 200
 
     @app.route("/weather", methods=["POST"])
@@ -30,5 +35,11 @@ def configure_views(app):
         city = request.form.get('city', 'Brasov')
         date = request.form.get('date', str(datetime.date.today()))
         key = f'{city}-{date}' if date else city
-        client.set(key, json.dumps(weather))
+        try:
+            client.set(key, json.dumps(weather))
+        except Exception as e:
+            print(f'Failed to set data in Redis: {e}')
+            return 'Internal server error', 500
+
         return 'OK', 200
+

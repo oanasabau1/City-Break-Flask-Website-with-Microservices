@@ -200,8 +200,12 @@ services:
         condition: service_started
       logstash-agent:
         condition: service_started
+      events_service:
+        condition: service_started
+      weather_service:
+        condition: service_started
     environment:
-      - EVENTS_SERVICE_URL=http://event_service:5000/events
+      - EVENTS_SERVICE_URL=http://events_service:5000/events
       - WEATHER_SERVICE_URL=http://weather_service:5000/weather
       - MICROSERVICE_NAME=gateway_service
       - MICROSERVICE_HOST=gateway_service
@@ -214,7 +218,7 @@ services:
       - LOGSTASH_AGENT_HOST=logstash-agent
       - LOGSTASH_AGENT_PORT=51515
       - LOGSTASH_ENABLED=True
-      - USE_DB=False
+      - USE_DB=True
       - MICROSERVICE_DB_URI=mysql://events:abc123@service-event-db:3306/events
     networks:
       siemens:

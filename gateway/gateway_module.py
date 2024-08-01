@@ -1,4 +1,5 @@
 from flask import *
+from wtforms import *
 from decouple import config
 
 import json
@@ -11,7 +12,6 @@ from requests import delete as Delete
 
 events_url = config('EVENTS_SERVICE_URL')
 weather_url = config('WEATHER_SERVICE_URL')
-
 req_mapping = {'GET': Get, 'PUT': Put, 'POST': Post, 'DELETE': Delete}
 
 
@@ -26,7 +26,7 @@ def proxy_request(request, target_url):
 
 def configure_views(app):
     @app.route("/citybreak", methods=["GET"])
-    def get(self):
+    def get():
         city = request.args.get('city')
         date = request.args.get('date', str(datetime.date.today()))
         if not city or not date:
