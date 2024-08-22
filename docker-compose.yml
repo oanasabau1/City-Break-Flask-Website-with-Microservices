@@ -218,8 +218,7 @@ services:
       - LOGSTASH_AGENT_HOST=logstash-agent
       - LOGSTASH_AGENT_PORT=51515
       - LOGSTASH_ENABLED=True
-      - USE_DB=True
-      - MICROSERVICE_DB_URI=mysql://events:abc123@service-event-db:3306/events
+      - USE_DB=False
     networks:
       siemens:
         ipv4_address: 10.10.10.16

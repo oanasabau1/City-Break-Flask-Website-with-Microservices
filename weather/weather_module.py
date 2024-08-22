@@ -17,7 +17,7 @@ def configure_views(app):
         weather = client.get(key)
         print(f'key={key}')
         if not weather:
-            return 'No data found for the specified key', 404
+            return [], 404
 
         try:
             weather = weather.decode('utf-8')

@@ -1,4 +1,4 @@
-FROM oanasabau1/microskel24
+FROM microskel
 
 ADD . /service_one
 WORKDIR /service_one
